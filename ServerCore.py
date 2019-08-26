@@ -12,15 +12,16 @@ class ServerCore:
 
     ADJACENT_MESSAGES_SEPARATOR = MESSAGE_DELIMITER + MESSAGE_DELIMITER
 
-    EXCEPTIONS_TO_BE_CAUGHT_DURING_SENDING = [
+    EXCEPTIONS_TO_BE_CAUGHT_DURING_SENDING = (
+        ConnectionAbortedError,
         ConnectionResetError,
         BlockingIOError
-    ]
+    )
 
-    EXCEPTIONS_TO_BE_CAUGHT_DURING_RECEIVING = [
+    EXCEPTIONS_TO_BE_CAUGHT_DURING_RECEIVING = (
         ConnectionResetError,
         OSError
-    ]
+    )
 
     def __init__(self):
         # inputs, outputs are the arrays which will contain the sockets in which either the data is to be written or fetched from.
@@ -60,16 +61,6 @@ class ServerCore:
         except socket.error:
             print("Unable to bind server with specified host and port!")
 
-    def initialize_client(self, socket):
-        socket.setblocking(False)
-
-        print("A client connected from {}".format(socket.getpeername()))
-        self.inputs.append(socket)
-        self.message_queues[socket] = queue.Queue()
-        self.sockets_incomplete_messages[socket] = ""
-        self.connections_information[socket] = {}
-        ServerCore.client_id += 1
-
     def power_on(self):
         self.listener.listen(ServerCore.MAXIMUM_NUM_OF_CLIENTS)
         self.listener.setblocking(False)
@@ -92,29 +83,14 @@ class ServerCore:
                 self.send_data_through_socket(sock)
 
             for sock in exceptional:
-                print('asdad')
                 self.drop_client(sock)
-
-    def send_data_through_socket(self, socket):
-        try:
-            next_msg = self.message_queues[socket].get_nowait()
-        except queue.Empty:
-            self.outputs.remove(socket)
-        else:
-            # During sending catch different exceptions like ConnectionReset.
-            # If any exception occurs, drop that client.
-            try:
-                socket.sendall(next_msg.encode())
-            except zip(*ServerCore.EXCEPTIONS_TO_BE_CAUGHT_DURING_SENDING):
-                self.drop_client(socket)
 
     def process_received_data(self, socket):
         try:
             received_data = socket.recv(ServerCore.RECEIVING_NUM_OF_BYTES).decode()
             if not received_data:
-                self.drop_client(socket)
-                return
-        except zip(*ServerCore.EXCEPTIONS_TO_BE_CAUGHT_DURING_RECEIVING):
+                raise ConnectionAbortedError
+        except ServerCore.EXCEPTIONS_TO_BE_CAUGHT_DURING_RECEIVING:
             self.drop_client(socket)
         else:
             received_data = self.sockets_incomplete_messages[socket] + received_data
@@ -141,6 +117,39 @@ class ServerCore:
     def process_message(self, socket, message):
         raise NotImplementedError
 
+    def initialize_client(self, socket):
+        socket.setblocking(False)
+
+        print("A client connected from {}".format(socket.getpeername()))
+        self.inputs.append(socket)
+        self.message_queues[socket] = queue.Queue()
+        self.sockets_incomplete_messages[socket] = ""
+        self.connections_information[socket] = {}
+        ServerCore.client_id += 1
+
+    def send_data_through_socket(self, socket):
+        try:
+            next_msg = self.message_queues[socket].get_nowait()
+        except queue.Empty:
+            self.outputs.remove(socket)
+        else:
+            # During sending catch different exceptions like ConnectionReset.
+            # If any exception occurs, drop that client.
+            try:
+                socket.sendall(next_msg.encode())
+            except ServerCore.EXCEPTIONS_TO_BE_CAUGHT_DURING_SENDING:
+                self.drop_client(socket)
+
+    def append_message_to_sending_queue(self, recipient_socket, message):
+        message = ServerCore.MESSAGE_DELIMITER + message + ServerCore.MESSAGE_DELIMITER
+        self.message_queues[recipient_socket].put(message)
+        if recipient_socket not in self.outputs:
+            self.outputs.append(recipient_socket)
+
+    def send_immediate(self, recipient_socket, message):
+        self.append_message_to_sending_queue(recipient_socket, message)
+        self.send_data_through_socket(recipient_socket)
+
     def drop_client(self, socket):
         self.remove_resources(socket)
         socket.close()
@@ -153,13 +162,3 @@ class ServerCore:
         del self.connections_information[socket]
         del self.message_queues[socket]
         del self.sockets_incomplete_messages[socket]
-
-    def append_message_to_sending_queue(self, recipient_socket, message):
-        message = ServerCore.MESSAGE_DELIMITER + message + ServerCore.MESSAGE_DELIMITER
-        self.message_queues[recipient_socket].put(message)
-        if recipient_socket not in self.outputs:
-            self.outputs.append(recipient_socket)
-
-    def send_immediate(self, recipient_socket, message):
-        self.append_message_to_sending_queue(recipient_socket, message)
-        self.send_data_through_socket(recipient_socket)

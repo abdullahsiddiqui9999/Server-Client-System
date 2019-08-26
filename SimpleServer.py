@@ -7,11 +7,7 @@ class SimpleServer(DiscreteMessageHandlingServer):
         DiscreteMessageHandlingServer.__init__(self)
 
     def process_discrete_message(self, socket, message):
-        decoded_content = base64.b64decode(message.encode())
-        image_result = open('image_received.jpg', 'wb')
-        image_result.write(decoded_content)
-        image_result.close()
-        print("File written!")
+        print(message)
 
 
 ss = SimpleServer()
