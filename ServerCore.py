@@ -1,179 +1,165 @@
-import  select, socket, queue, time
+import select
+import socket
+import queue
+
 
 class ServerCore:
-    id = 0
+    client_id = 0
 
-    def __init__(self, max_num_clients, receiving_chunk_size, message_delimiter ):
+    MESSAGE_DELIMITER = '$'
+    MAXIMUM_NUM_OF_CLIENTS = 10
+    RECEIVING_NUM_OF_BYTES = 1024 * 10
+
+    ADJACENT_MESSAGES_SEPARATOR = MESSAGE_DELIMITER + MESSAGE_DELIMITER
+
+    EXCEPTIONS_TO_BE_CAUGHT_DURING_SENDING = [
+        ConnectionResetError,
+        BlockingIOError
+    ]
+
+    EXCEPTIONS_TO_BE_CAUGHT_DURING_RECEIVING = [
+        ConnectionResetError,
+        OSError
+    ]
+
+    def __init__(self):
+        # inputs, outputs are the arrays which will contain the sockets in which either the data is to be written or fetched from.
         self.inputs = []
         self.outputs = []
+
+        # messages queues contain data which is to be sent through the socket
+        # self.messages_queues[socket_object] gives the data which is to be sent.
         self.message_queues = {}
+
+        # connection_information[socket_object] gives a dictionary which stores information of the client
+        # which is connected to the socket.
+        self.connections_information = {}
+
+        # Case 1: When the application data is sent in bulk, many separate transport layer messages arrive at the same time and get stored in socket buffers adjacent
+        # to one another. e.g.
+        # "xyzxyzxyz" are three separate application layer messages present in the receiving buffer of socket if we consider xyz as a separate application layer message.
+
+        # Case 2: Or if a very big file is sent over the socket then it arrives in parts at the receiving end. Therefore we must buffer the file data until
+        # whole file is received.
+
+        # "abcde" , "fghij" can be considered 2 different transport layer messages of the same app layer message if we consider "abcdefghij" as a single
+        # application layer message.
+
+        # What we do is we surround the application layer message with a special character called "message_delimiter"
+        # and partition the data on 2 adjacent delimiters on the receiving end.
+        # e.g. "$abc$$abc$" we can split the data on "$$" to get 2 separate app layer messages.
+
+        # It contains data of which some part is yet to be received.
+        self.sockets_incomplete_messages = {}
+
         self.listener = socket.socket()
-        self.max_num_clients = max_num_clients
-        self.receiving_chunk_size = receiving_chunk_size
-        self.socket_trailing_data = {}
-        self.sockets_info = {}
-        self.socket_buffers = {}
-        self.message_delimiter = message_delimiter
 
     def bind_clients_listener(self, host, port):
         try:
             self.listener.bind((host, port))
         except socket.error:
-            print( "Unable to bind server with specified host and port! ( For local clients )" )
-            return
+            print("Unable to bind server with specified host and port!")
 
-    def initializeClient(self, socket):
-        socket.setblocking(0)
+    def initialize_client(self, socket):
+        socket.setblocking(False)
 
-        print("A client connected from {}".format( socket.getpeername() ))
+        print("A client connected from {}".format(socket.getpeername()))
         self.inputs.append(socket)
         self.message_queues[socket] = queue.Queue()
-        self.socket_trailing_data[socket] = ""
-        self.socket_buffers[ socket ] = ""
-        self.sockets_info[ socket ] = {}
-        ServerCore.id += 1
+        self.sockets_incomplete_messages[socket] = ""
+        self.connections_information[socket] = {}
+        ServerCore.client_id += 1
 
     def power_on(self):
-        self.listener.listen(self.max_num_clients)
-        self.listener.setblocking(0)
+        self.listener.listen(ServerCore.MAXIMUM_NUM_OF_CLIENTS)
+        self.listener.setblocking(False)
         self.inputs.append(self.listener)
 
-        print( "Listening to client on: {}".format(self.listener.getsockname()))
+        print("Listening to client on: {}".format(self.listener.getsockname()))
 
         while self.inputs:
-            try:
-                readable, writable, exceptional = select.select(
-                    self.inputs, self.outputs, self.inputs )
-                for sock in readable:
-                    if sock is self.listener:
-                        connection, client_address = sock.accept()
-                        self.initializeClient(connection)
-                    else:
-                        try:
-                            self.processReceivedData(sock)
-                        except KeyError:
-                            pass
+            readable, writable, exceptional = select.select(
+                self.inputs, self.outputs, self.inputs)
 
-                for sock in writable:
-                    try:
-                        next_msg = self.message_queues[sock].get_nowait()
-                    except queue.Empty:
-                        self.outputs.remove(sock)
-                    except KeyError:
-                        pass
-                    else:
-                        try:
-                            sock.sendall(next_msg.encode())
-                        except BlockingIOError:
-                            print("Blocking IO error occurred!")
-                        except ConnectionResetError:
-                            print("Connection reset error occurred!")
-                            self.dropClient(sock)
+            for sock in readable:
+                if sock is self.listener:
+                    client_socket, client_address = sock.accept()
+                    self.initialize_client(client_socket)
+                else:
+                    self.process_received_data(sock)
 
-                for sock in exceptional:
-                    self.dropClient(sock)
-            except ValueError:
-                print( "Value error occurred!" )
-                for input_socket in self.inputs:
-                    if input_socket.fileno() == -1:
-                        if socket in self.outputs:
-                            self.outputs.remove(socket)
-                        self.inputs.remove(input_socket)
-                        del self.sockets_info[input_socket]
-                        del self.message_queues[input_socket]
-                        del self.socket_trailing_data[input_socket]
-                        del self.socket_buffers[input_socket]
+            for sock in writable:
+                self.send_data_through_socket(sock)
 
+            for sock in exceptional:
+                print('asdad')
+                self.drop_client(sock)
 
-    def flushSocketData( self, sock ):
-        print( "Flushing data!" )
-        while True:
-            try:
-                next_msg = self.message_queues[sock].get_nowait()
-            except queue.Empty:
-                break
-            except KeyError:
-                break
-            else:
-                try:
-                    sock.sendall(next_msg.encode())
-                except BlockingIOError:
-                    pass
-                except ConnectionResetError:
-                    break
-
-    def processReceivedData(self, socket):
+    def send_data_through_socket(self, socket):
         try:
-            data = socket.recv(self.receiving_chunk_size).decode()
-            data = self.socket_trailing_data[ socket ] + data
-        except ConnectionResetError:
-            self.dropClient( socket )
-            return
-        except OSError:
-            self.dropClient( socket )
-            return
-
-        if data:
-            while True:
-                message = self.partitionData( socket, data )
-
-                self.processMessage( socket, message )
-
-                count_of_delimiter = self.socket_trailing_data[ socket ].count( self.message_delimiter )
-                if count_of_delimiter < 2:
-                    break
-                data = self.socket_trailing_data[ socket ]
+            next_msg = self.message_queues[socket].get_nowait()
+        except queue.Empty:
+            self.outputs.remove(socket)
         else:
-            self.dropClient( socket )
+            # During sending catch different exceptions like ConnectionReset.
+            # If any exception occurs, drop that client.
+            try:
+                socket.sendall(next_msg.encode())
+            except zip(*ServerCore.EXCEPTIONS_TO_BE_CAUGHT_DURING_SENDING):
+                self.drop_client(socket)
 
-    def processMessage(self, socket, message):
+    def process_received_data(self, socket):
+        try:
+            received_data = socket.recv(ServerCore.RECEIVING_NUM_OF_BYTES).decode()
+            if not received_data:
+                self.drop_client(socket)
+                return
+        except zip(*ServerCore.EXCEPTIONS_TO_BE_CAUGHT_DURING_RECEIVING):
+            self.drop_client(socket)
+        else:
+            received_data = self.sockets_incomplete_messages[socket] + received_data
+
+            # clear the incomplete message after prepending its data to the received data
+            self.sockets_incomplete_messages[socket] = ""
+
+            # messages will be array of splitted messages.
+            messages = received_data.split(ServerCore.ADJACENT_MESSAGES_SEPARATOR)
+
+            # get the last message and check if it also complete.
+            last_message = messages.pop()
+
+            for message in messages:
+                self.process_message(socket, message.strip(ServerCore.MESSAGE_DELIMITER))
+
+            # if the last_message ends with a delimiter this means that it is a complete message
+            # else not and some of its part will come in the next message.
+            if last_message.endswith(ServerCore.MESSAGE_DELIMITER):
+                self.process_message(socket, last_message.strip(ServerCore.MESSAGE_DELIMITER))
+            else:
+                self.sockets_incomplete_messages[socket] = last_message
+
+    def process_message(self, socket, message):
         raise NotImplementedError
 
-    def partitionData(self, socket, data ):
-        index_of_first_interleaving_message = data.find("{}{}".format( self.message_delimiter, self.message_delimiter )  )
-        if index_of_first_interleaving_message != -1:
-            current_message = data[: index_of_first_interleaving_message + 1]
-            trailing_data = data[index_of_first_interleaving_message + 1:]
-            self.socket_trailing_data[socket] = trailing_data
-            data = current_message
-        else:
-            self.socket_trailing_data[socket] = ""
-
-        return data
-
-    def dropClient(self, socket):
-        self.removeResources( socket )
+    def drop_client(self, socket):
+        self.remove_resources(socket)
         socket.close()
 
-    def removeResources(self, socket):
-        print( "Removing: {}".format( socket.getpeername() ) )
+    def remove_resources(self, socket):
+        print("Removing: {}".format(socket.getpeername()))
         if socket in self.outputs:
-            self.flushSocketData( socket )
             self.outputs.remove(socket)
         self.inputs.remove(socket)
-        del self.sockets_info[socket]
+        del self.connections_information[socket]
         del self.message_queues[socket]
-        del self.socket_trailing_data[socket]
-        del self.socket_buffers[ socket ]
+        del self.sockets_incomplete_messages[socket]
 
-    def sendMessage(self, sendee_socket, message ):
-        try:
-            self.message_queues[sendee_socket].put( message )
-            if sendee_socket not in self.outputs:
-                self.outputs.append(sendee_socket)
-        except KeyError:
-            #KeyError occurs due to dropping of a client.
-            pass
-        return
+    def append_message_to_sending_queue(self, recipient_socket, message):
+        message = ServerCore.MESSAGE_DELIMITER + message + ServerCore.MESSAGE_DELIMITER
+        self.message_queues[recipient_socket].put(message)
+        if recipient_socket not in self.outputs:
+            self.outputs.append(recipient_socket)
 
-    def findSocket(self, attribute_value, attribute_name ="username"):
-        for socket, info in self.sockets_info.items():
-            try:
-                if info[attribute_name] == attribute_value:
-                    return socket
-            except KeyError:
-                pass
-        return False
-
-    def getPort(self):
-        return self.listener.getsockname()[ 1 ] #Port
+    def send_immediate(self, recipient_socket, message):
+        self.append_message_to_sending_queue(recipient_socket, message)
+        self.send_data_through_socket(recipient_socket)

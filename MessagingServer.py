@@ -3,32 +3,32 @@ import socket
 from CustomExceptions import UserValidationFailedException, ClientOfflineException
 
 class MessagingServer( DiscreteMessageHandlingServer ):
-    def __init__(self, max_num_clients, receiving_chunk_size, message_delimiter, basic_server_pointer ):
-        DiscreteMessageHandlingServer.__init__( self, max_num_clients, receiving_chunk_size, message_delimiter )
+    def __init__(self, max_num_clients, receiving_buffer_size, message_delimiter, basic_server_pointer):
+        DiscreteMessageHandlingServer.__init__(self, max_num_clients, receiving_buffer_size, message_delimiter)
         self.basic_server_pointer = basic_server_pointer
 
 
-    def dropClient(self, socket):
+    def drop_client(self, socket):
         #-------------------------------------------------------------------------
         #Remove extra resources if allocated here!
         #------------------------------------------------------------------------
 
-        DiscreteMessageHandlingServer.dropClient( self, socket )
+        DiscreteMessageHandlingServer.drop_client(self, socket)
 
     def registerUser(self, socket, message):
         noti, id = message.split( '\n' )
         try:
-            self.sockets_info[ socket ] = {
+            self.connections_information[ socket] = {
                 'id' : id,
                 'username': self.basic_server_pointer.getUsernameThroughID( id )
             }
-            self.sendMessage(socket, "{}1\nValidation succeed!{}".format(self.message_delimiter, self.message_delimiter))
+            self.append_message_to_sending_queue(socket, "{}1\nValidation succeed!{}".format(self.message_delimiter, self.message_delimiter))
         except UserValidationFailedException:
             print( "Invalid user" )
-            self.sendMessage( socket, "{}0\nValidation failed!{}".format( self.message_delimiter, self.message_delimiter ) )
-            self.dropClient( socket )
+            self.append_message_to_sending_queue(socket, "{}0\nValidation failed!{}".format(self.message_delimiter, self.message_delimiter))
+            self.drop_client(socket)
 
-    def processDiscreteMessage(self, sock, message):
+    def process_discrete_message(self, sock, message):
         if message.startswith( 'registration' ):
             self.registerUser( sock, message )
         else:
@@ -37,7 +37,7 @@ class MessagingServer( DiscreteMessageHandlingServer ):
             sendee_socket = self.findSocket( sendee_name )
             if sendee_socket != False:
                 #Local client.
-                self.sendMessage( sendee_socket, '{}{}{}'.format( self.message_delimiter, message, self.message_delimiter ) )
+                self.append_message_to_sending_queue(sendee_socket, '{}{}{}'.format(self.message_delimiter, message, self.message_delimiter))
             else:
                 #Its a foreign client, connect to foreign servers exchange.
                 print( "Foreign client!" )

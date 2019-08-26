@@ -3,67 +3,67 @@ import socket
 from CustomExceptions import ClientOfflineException, ClientIsBusyException, ClientUnreachableException, UserValidationFailedException
 
 class CallExchange( DiscreteMessageHandlingServer ):
-    def __init__(self, max_num_clients, receiving_chunk_size, message_delimiter, basic_server_pointer, video_server_pointer ):
-        DiscreteMessageHandlingServer.__init__( self, max_num_clients, receiving_chunk_size, message_delimiter )
+    def __init__(self, max_num_clients, receiving_buffer_size, message_delimiter, basic_server_pointer, video_server_pointer):
+        DiscreteMessageHandlingServer.__init__(self, max_num_clients, receiving_buffer_size, message_delimiter)
         self.basic_server_pointer = basic_server_pointer
         self.recipient_call_sockets = {}
         self.video_server_pointer = video_server_pointer
 
-    def dropClient( self, socket ):
+    def drop_client(self, socket):
         #-------------------------------------------------------------------------
         #Remove extra resources if allocated here!
         #------------------------------------------------------------------------
         try:
-            recipient_call_socket = self.sockets_info[ socket ][ 'recipient_call_socket' ]
+            recipient_call_socket = self.connections_information[ socket]['recipient_call_socket']
             recipient_call_socket.close()
-            recipient_exchange_socket = self.sockets_info[ socket ]['recipient_exchange_socket']
+            recipient_exchange_socket = self.connections_information[ socket]['recipient_exchange_socket']
             self.setIsBusy( recipient_exchange_socket, False )
             del self.recipient_call_sockets[ recipient_call_socket ]
         except KeyError:
             pass
-        DiscreteMessageHandlingServer.dropClient( self, socket )
+        DiscreteMessageHandlingServer.drop_client(self, socket)
 
     def setIsBusy(self, exchange_socket, value ):
-        self.sockets_info[ exchange_socket ][ 'is_busy' ] = value
+        self.connections_information[ exchange_socket]['is_busy'] = value
 
     def registerUser(self, socket, message):
         header, id, port = message.split( '\n' )
         try:
-            self.sockets_info[ socket ] = {
+            self.connections_information[ socket] = {
                 'id' : id,
                 'username': self.basic_server_pointer.getUsernameThroughID( id ),
                 'incoming_call_port': port,
                 'is_busy': False
             }
-            self.sendMessage(socket,
+            self.append_message_to_sending_queue(socket,
                              "{}1\nValidation succeed!{}".format(self.message_delimiter, self.message_delimiter))
         except UserValidationFailedException:
             print( "Invalid user" )
-            self.sendMessage(socket, "{}0\nValidation failed!{}".format(self.message_delimiter, self.message_delimiter))
-            self.dropClient( socket )
+            self.append_message_to_sending_queue(socket, "{}0\nValidation failed!{}".format(self.message_delimiter, self.message_delimiter))
+            self.drop_client(socket)
 
     def handleMessageFromDialer(self, dialer_socket, message):
         if message.startswith( 'connect_to' ):
             try:
                 self.configureIncomingConnection(dialer_socket, message)
             except ClientOfflineException:
-                self.sendMessage(dialer_socket, "{}ERROR:{}{}".format(self.message_delimiter, "Client offline",
-                                                             self.message_delimiter))
-                self.dropClient( dialer_socket )
+                self.append_message_to_sending_queue(dialer_socket, "{}ERROR:{}{}".format(self.message_delimiter, "Client offline",
+                                                                                          self.message_delimiter))
+                self.drop_client(dialer_socket)
                 print( "Client is offline" )
             except ClientIsBusyException:
-                self.sendMessage(dialer_socket, "{}ERROR:{}{}".format(self.message_delimiter, "Client is busy",
-                                                                      self.message_delimiter))
-                self.dropClient( dialer_socket )
+                self.append_message_to_sending_queue(dialer_socket, "{}ERROR:{}{}".format(self.message_delimiter, "Client is busy",
+                                                                                          self.message_delimiter))
+                self.drop_client(dialer_socket)
                 print( "Client is busy" )
             except ClientUnreachableException:
-                self.sendMessage(dialer_socket, "{}ERROR:{}{}".format(self.message_delimiter, "Client is unreachable",
-                                                                      self.message_delimiter))
-                self.dropClient(dialer_socket)
+                self.append_message_to_sending_queue(dialer_socket, "{}ERROR:{}{}".format(self.message_delimiter, "Client is unreachable",
+                                                                                          self.message_delimiter))
+                self.drop_client(dialer_socket)
                 print("Client is unreachable")
         elif message.startswith( 'tone' ):
-            self.sendMessage( self.sockets_info[ dialer_socket ][ 'recipient_call_socket' ], '{}tone{}'.format(
-                self.message_delimiter, self.message_delimiter ) )
+            self.append_message_to_sending_queue(self.connections_information[ dialer_socket]['recipient_call_socket'], '{}tone{}'.format(
+                self.message_delimiter, self.message_delimiter ))
 
     def handleMessageFromRecipientCallSocket( self, recipient_call_socket, message ):
         if message.startswith("ACCEPTED"):
@@ -84,14 +84,14 @@ class CallExchange( DiscreteMessageHandlingServer ):
                                                     self.recipient_call_sockets[ recipient_call_socket ][ 'recipient_exchange_socket' ]
                                                     )
 
-            self.removeResources(recipient_call_socket)
-            self.removeResources(self.recipient_call_sockets[recipient_call_socket]['dialer_socket'])
+            self.remove_resources(recipient_call_socket)
+            self.remove_resources(self.recipient_call_sockets[recipient_call_socket]['dialer_socket'])
 
         elif message.startswith("REJECTED"):
-            self.sendMessage(self.recipient_call_sockets[ recipient_call_socket ]['dialer_socket'], '{}REJECTED{}'.format(
+            self.append_message_to_sending_queue(self.recipient_call_sockets[ recipient_call_socket]['dialer_socket'], '{}REJECTED{}'.format(
                 self.message_delimiter, self.message_delimiter))
 
-    def processDiscreteMessage(self, socket, message ):
+    def process_discrete_message(self, socket, message):
         if message.startswith( 'registration' ) :
             self.registerUser( socket, message )
         elif socket in self.recipient_call_sockets:
@@ -107,13 +107,13 @@ class CallExchange( DiscreteMessageHandlingServer ):
         if recipient_exchange_socket == False:
             raise ClientOfflineException
 
-        if self.sockets_info[ recipient_exchange_socket ][ 'is_busy' ]:
+        if self.connections_information[ recipient_exchange_socket]['is_busy']:
             raise ClientIsBusyException
 
 
         recipient_call_socket = socket.socket()
         try:
-            port = eval(self.sockets_info[ recipient_exchange_socket ][ 'incoming_call_port' ] )
+            port = eval(self.connections_information[ recipient_exchange_socket]['incoming_call_port'])
             recipient_call_socket.connect( ( recipient_exchange_socket.getpeername()[0], port ) )
         except socket.error:
             raise ClientUnreachableException
@@ -126,15 +126,15 @@ class CallExchange( DiscreteMessageHandlingServer ):
                                                                                        recipient, caller, type_of_dial,
                                                                                        self.message_delimiter).encode() )
 
-        self.sockets_info[ dialer_socket ]["recipient"] = recipient
-        self.sockets_info[ dialer_socket ]["caller"] = caller
-        self.sockets_info[ dialer_socket ]["type_of_dial"] = type_of_dial
-        self.sockets_info[ dialer_socket ]['recipient_call_socket'] = recipient_call_socket
-        self.sockets_info[ dialer_socket ]['recipient_exchange_socket'] = recipient_exchange_socket
+        self.connections_information[ dialer_socket]["recipient"] = recipient
+        self.connections_information[ dialer_socket]["caller"] = caller
+        self.connections_information[ dialer_socket]["type_of_dial"] = type_of_dial
+        self.connections_information[ dialer_socket]['recipient_call_socket'] = recipient_call_socket
+        self.connections_information[ dialer_socket]['recipient_exchange_socket'] = recipient_exchange_socket
         self.recipient_call_sockets[ recipient_call_socket ] = {
             'dialer_socket': dialer_socket,
             'recipient_exchange_socket': recipient_exchange_socket
         }
         self.setIsBusy( recipient_exchange_socket, True )
-        DiscreteMessageHandlingServer.initializeClient( self, recipient_call_socket )
+        DiscreteMessageHandlingServer.initialize_client(self, recipient_call_socket)
 
