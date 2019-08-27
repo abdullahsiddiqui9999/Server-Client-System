@@ -9,8 +9,3 @@ for i in range(0, 50):
     s.send('$a$'.encode())
 
 s.close()
-
-
-
-
-

@@ -1,7 +1,7 @@
 import select
 import socket
 import queue
-
+import threading
 
 class SingleThreadedMultiClientServer:
     client_id = 0
@@ -55,6 +55,9 @@ class SingleThreadedMultiClientServer:
 
         self._listener = socket.socket()
 
+        # Make initializing client method thread safe.
+        self._initialize_client_mutex = threading.Semaphore(1)
+
     def bind_clients_listener(self, host, port):
         self._listener.bind((host, port))
 
@@ -72,7 +75,7 @@ class SingleThreadedMultiClientServer:
             for connection in readable:
                 if connection is self._listener:
                     client_socket, client_address = connection.accept()
-                    self._initialize_client(client_socket)
+                    AsyncHandshakeModule(self, client_socket).start()
                 else:
                     self._process_received_data(connection)
 
@@ -94,6 +97,24 @@ class SingleThreadedMultiClientServer:
     def send_immediate(self, recipient_connection, message):
         self.append_message_to_sending_queue(recipient_connection, message)
         self._send_data_through_socket(recipient_connection)
+
+    def initialize_client(self, connection, connection_information={}):
+        self._initialize_client_mutex.acquire()
+
+        connection.setblocking(False)
+
+        print("A client connected from {}".format(connection.getpeername()))
+        self._inputs.append(connection)
+        self._message_queues[connection] = queue.Queue()
+        self._sockets_incomplete_messages[connection] = ""
+        self.connections_information[connection] = connection_information
+        SingleThreadedMultiClientServer.client_id += 1
+
+        self._initialize_client_mutex.release()
+
+    # ---------------------------------------------------------
+    #                   PROTECTED FUNCTIONS
+    # ---------------------------------------------------------
 
     def _process_received_data(self, connection):
         try:
@@ -124,15 +145,8 @@ class SingleThreadedMultiClientServer:
             else:
                 self._sockets_incomplete_messages[connection] = last_message
 
-    def _initialize_client(self, connection):
-        connection.setblocking(False)
-
-        print("A client connected from {}".format(connection.getpeername()))
-        self._inputs.append(connection)
-        self._message_queues[connection] = queue.Queue()
-        self._sockets_incomplete_messages[connection] = ""
-        self.connections_information[connection] = {}
-        SingleThreadedMultiClientServer.client_id += 1
+    def _complete_handshake_with_newly_connected_client(self, connection):
+        pass
 
     def _send_data_through_socket(self, connection):
         try:
@@ -159,3 +173,27 @@ class SingleThreadedMultiClientServer:
         del self.connections_information[connection]
         del self._message_queues[connection]
         del self._sockets_incomplete_messages[connection]
+
+    # This method is called by AsyncHandshakeModule from a separate thread as a callback.
+    # CAUTION: be thread-safe.
+    # This method is expected to be orridden by the child class and add custom data receiving logic in it.
+    def perform_handshake_return_client_information(self, client_connection):
+        """This method should return a dictionary which will be stored
+        against connections_information[client_connection]
+        CAUTION: Don't try to change any attribute of this class in attribute"""
+        raise NotImplementedError
+
+
+class AsyncHandshakeModule(threading.Thread):
+    def __init__(self, parent_sv, client_connection):
+        threading.Thread.__init__(self)
+        self.parent_sv = parent_sv
+        self.client_connection = client_connection
+
+    def run(self):
+        self.client_connection.setblocking(True)
+
+        # Get a dictionary containing user data.
+        client_connection_information = self.parent_sv.perform_handshake_return_client_information(self.client_connection)
+
+        self.parent_sv.initialize_client(self.client_connection, client_connection_information)
