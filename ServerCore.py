@@ -56,10 +56,7 @@ class ServerCore:
         self._listener = socket.socket()
 
     def bind_clients_listener(self, host, port):
-        try:
-            self._listener.bind((host, port))
-        except socket.error:
-            print("Unable to bind server with specified host and port!")
+        self._listener.bind((host, port))
 
     def power_on(self):
         self._listener.listen(ServerCore.MAXIMUM_NUM_OF_CLIENTS)
