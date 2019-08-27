@@ -82,6 +82,19 @@ class ServerCore:
             for connection in exceptional:
                 self._drop_client(connection)
 
+    def process_message(self, connection, message):
+        raise NotImplementedError
+
+    def append_message_to_sending_queue(self, recipient_connection, message):
+        message = ServerCore.MESSAGE_DELIMITER + message + ServerCore.MESSAGE_DELIMITER
+        self._message_queues[recipient_connection].put(message)
+        if recipient_connection not in self._outputs:
+            self._outputs.append(recipient_connection)
+
+    def send_immediate(self, recipient_connection, message):
+        self.append_message_to_sending_queue(recipient_connection, message)
+        self._send_data_through_socket(recipient_connection)
+
     def _process_received_data(self, connection):
         try:
             received_data = connection.recv(ServerCore.RECEIVING_NUM_OF_BYTES).decode()
@@ -111,9 +124,6 @@ class ServerCore:
             else:
                 self._sockets_incomplete_messages[connection] = last_message
 
-    def process_message(self, connection, message):
-        raise NotImplementedError
-
     def _initialize_client(self, connection):
         connection.setblocking(False)
 
@@ -136,16 +146,6 @@ class ServerCore:
                 connection.sendall(next_msg.encode())
             except ServerCore.EXCEPTIONS_TO_BE_CAUGHT_DURING_SENDING:
                 self._drop_client(connection)
-
-    def append_message_to_sending_queue(self, recipient_connection, message):
-        message = ServerCore.MESSAGE_DELIMITER + message + ServerCore.MESSAGE_DELIMITER
-        self._message_queues[recipient_connection].put(message)
-        if recipient_connection not in self._outputs:
-            self._outputs.append(recipient_connection)
-
-    def send_immediate(self, recipient_connection, message):
-        self.append_message_to_sending_queue(recipient_connection, message)
-        self._send_data_through_socket(recipient_connection)
 
     def _drop_client(self, connection):
         self._remove_resources(connection)
