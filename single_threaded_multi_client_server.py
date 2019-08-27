@@ -3,7 +3,7 @@ import socket
 import queue
 
 
-class ServerCore:
+class SingleThreadedMultiClientServer:
     client_id = 0
 
     MESSAGE_DELIMITER = '$'
@@ -59,7 +59,7 @@ class ServerCore:
         self._listener.bind((host, port))
 
     def power_on(self):
-        self._listener.listen(ServerCore.MAXIMUM_NUM_OF_CLIENTS)
+        self._listener.listen(SingleThreadedMultiClientServer.MAXIMUM_NUM_OF_CLIENTS)
         self._listener.setblocking(False)
         self._inputs.append(self._listener)
 
@@ -86,7 +86,7 @@ class ServerCore:
         raise NotImplementedError
 
     def append_message_to_sending_queue(self, recipient_connection, message):
-        message = ServerCore.MESSAGE_DELIMITER + message + ServerCore.MESSAGE_DELIMITER
+        message = SingleThreadedMultiClientServer.MESSAGE_DELIMITER + message + SingleThreadedMultiClientServer.MESSAGE_DELIMITER
         self._message_queues[recipient_connection].put(message)
         if recipient_connection not in self._outputs:
             self._outputs.append(recipient_connection)
@@ -97,10 +97,10 @@ class ServerCore:
 
     def _process_received_data(self, connection):
         try:
-            received_data = connection.recv(ServerCore.RECEIVING_NUM_OF_BYTES).decode()
+            received_data = connection.recv(SingleThreadedMultiClientServer.RECEIVING_NUM_OF_BYTES).decode()
             if not received_data:
                 raise ConnectionAbortedError
-        except ServerCore.EXCEPTIONS_TO_BE_CAUGHT_DURING_RECEIVING:
+        except SingleThreadedMultiClientServer.EXCEPTIONS_TO_BE_CAUGHT_DURING_RECEIVING:
             self._drop_client(connection)
         else:
             received_data = self._sockets_incomplete_messages[connection] + received_data
@@ -109,18 +109,18 @@ class ServerCore:
             self._sockets_incomplete_messages[connection] = ""
 
             # messages will be array of splitted messages.
-            messages = received_data.split(ServerCore.ADJACENT_MESSAGES_SEPARATOR)
+            messages = received_data.split(SingleThreadedMultiClientServer.ADJACENT_MESSAGES_SEPARATOR)
 
             # get the last message and check if it also complete.
             last_message = messages.pop()
 
             for message in messages:
-                self.process_message(connection, message.strip(ServerCore.MESSAGE_DELIMITER))
+                self.process_message(connection, message.strip(SingleThreadedMultiClientServer.MESSAGE_DELIMITER))
 
             # if the last_message ends with a delimiter this means that it is a complete message
             # else not and some of its part will come in the next message.
-            if last_message.endswith(ServerCore.MESSAGE_DELIMITER):
-                self.process_message(connection, last_message.strip(ServerCore.MESSAGE_DELIMITER))
+            if last_message.endswith(SingleThreadedMultiClientServer.MESSAGE_DELIMITER):
+                self.process_message(connection, last_message.strip(SingleThreadedMultiClientServer.MESSAGE_DELIMITER))
             else:
                 self._sockets_incomplete_messages[connection] = last_message
 
@@ -132,7 +132,7 @@ class ServerCore:
         self._message_queues[connection] = queue.Queue()
         self._sockets_incomplete_messages[connection] = ""
         self.connections_information[connection] = {}
-        ServerCore.client_id += 1
+        SingleThreadedMultiClientServer.client_id += 1
 
     def _send_data_through_socket(self, connection):
         try:
@@ -144,7 +144,7 @@ class ServerCore:
             # If any exception occurs, drop that client.
             try:
                 connection.sendall(next_msg.encode())
-            except ServerCore.EXCEPTIONS_TO_BE_CAUGHT_DURING_SENDING:
+            except SingleThreadedMultiClientServer.EXCEPTIONS_TO_BE_CAUGHT_DURING_SENDING:
                 self._drop_client(connection)
 
     def _drop_client(self, connection):
