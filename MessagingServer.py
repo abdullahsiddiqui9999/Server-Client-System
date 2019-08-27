@@ -8,12 +8,12 @@ class MessagingServer( DiscreteMessageHandlingServer ):
         self.basic_server_pointer = basic_server_pointer
 
 
-    def drop_client(self, socket):
+    def _drop_client(self, connection):
         #-------------------------------------------------------------------------
         #Remove extra resources if allocated here!
         #------------------------------------------------------------------------
 
-        DiscreteMessageHandlingServer.drop_client(self, socket)
+        DiscreteMessageHandlingServer._drop_client(self, connection)
 
     def registerUser(self, socket, message):
         noti, id = message.split( '\n' )
@@ -26,7 +26,7 @@ class MessagingServer( DiscreteMessageHandlingServer ):
         except UserValidationFailedException:
             print( "Invalid user" )
             self.append_message_to_sending_queue(socket, "{}0\nValidation failed!{}".format(self.message_delimiter, self.message_delimiter))
-            self.drop_client(socket)
+            self._drop_client(socket)
 
     def process_discrete_message(self, sock, message):
         if message.startswith( 'registration' ):

@@ -15,17 +15,17 @@ class Dialer( DiscreteMessageHandlingServer ):
     def setCallExchange(self, call_exchange_pointer ):
         self.call_exchange_pointer = call_exchange_pointer
 
-    def drop_client(self, socket):
+    def _drop_client(self, connection):
         #-------------------------------------------------------------------------
         #Remove extra resources if allocated here!
         #------------------------------------------------------------------------
         try:
-            exchange_socket = self.connections_information[ socket]["exchange_socket"]
+            exchange_socket = self.connections_information[ connection]["exchange_socket"]
             exchange_socket.close()
             del self.exchange_sockets[ exchange_socket ]
         except KeyError:
             pass
-        DiscreteMessageHandlingServer.drop_client(self, socket)
+        DiscreteMessageHandlingServer._drop_client(self, connection)
 
     def registerUser(self, socket, message):
         header, id = message.split( '\n' )
@@ -39,7 +39,7 @@ class Dialer( DiscreteMessageHandlingServer ):
         except UserValidationFailedException:
             print( "Invalid user" )
             self.append_message_to_sending_queue(socket, "{}0\nValidation failed!{}".format(self.message_delimiter, self.message_delimiter))
-            self.drop_client(socket)
+            self._drop_client(socket)
 
     def handleDataFromDialingClient(self, sock, message):
         if message.startswith('dial_info'):
@@ -49,14 +49,14 @@ class Dialer( DiscreteMessageHandlingServer ):
                 self.append_message_to_sending_queue(sock, "{}ERROR:{}{}".format(self.message_delimiter, "Client offline",
                                                                                  self.message_delimiter))
                 print("Current cline is offline now")
-                self.drop_client(sock)
+                self._drop_client(sock)
             except UnknownCallerException:
                 print( "Unregistered caller" )
             except socket.error:
                 self.append_message_to_sending_queue(sock, "{}ERROR:{}{}".format(self.message_delimiter, "Client Unreachable",
                                                                                  self.message_delimiter))
                 print("Unable to connect to exchange")
-                self.drop_client(sock)
+                self._drop_client(sock)
 
         elif message.startswith( 'tone' ):
             self.append_message_to_sending_queue(self.connections_information[ sock]['exchange_socket'], "{}tone{}".format(self.message_delimiter, self.message_delimiter))
@@ -74,13 +74,13 @@ class Dialer( DiscreteMessageHandlingServer ):
 
             self.video_server_pointer.importClient(dialer_socket, sock, self.connections_information[ dialer_socket]['caller_exchange_socket'])
 
-            self.remove_resources(dialer_socket)
-            self.remove_resources(sock)
+            self._remove_resources(dialer_socket)
+            self._remove_resources(sock)
         elif message.startswith("REJECTED"):
             # Drop client
             self.append_message_to_sending_queue(self.exchange_sockets[sock]['dialer_socket'],
                              "{}{}{}".format(self.message_delimiter, message, self.message_delimiter))
-            self.drop_client(sock)
+            self._drop_client(sock)
 
     def process_discrete_message(self, sock, message):
         if message.startswith( 'registration' ):
@@ -107,7 +107,7 @@ class Dialer( DiscreteMessageHandlingServer ):
         exchange_socket = socket.socket()
         exchange_socket.connect( ( gateway, self.call_exchange_pointer.getPort() ) )
         self.connections_information[ sock]["exchange_socket"] = exchange_socket
-        self.initialize_client(exchange_socket)
+        self._initialize_client(exchange_socket)
         self.append_message_to_sending_queue(exchange_socket, "{}connect_to\n{}\n{}\n{}{}".format(self.message_delimiter, recipient, caller, type_of_dial, self.message_delimiter))
         self.exchange_sockets[ exchange_socket ] = {
             'dialer_socket' : sock

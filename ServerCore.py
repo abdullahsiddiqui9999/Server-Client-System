@@ -25,12 +25,12 @@ class ServerCore:
 
     def __init__(self):
         # inputs, outputs are the arrays which will contain the sockets in which either the data is to be written or fetched from.
-        self.inputs = []
-        self.outputs = []
+        self._inputs = []
+        self._outputs = []
 
         # messages queues contain data which is to be sent through the socket
         # self.messages_queues[socket_object] gives the data which is to be sent.
-        self.message_queues = {}
+        self._message_queues = {}
 
         # connection_information[socket_object] gives a dictionary which stores information of the client
         # which is connected to the socket.
@@ -51,52 +51,52 @@ class ServerCore:
         # e.g. "$abc$$abc$" we can split the data on "$$" to get 2 separate app layer messages.
 
         # It contains data of which some part is yet to be received.
-        self.sockets_incomplete_messages = {}
+        self._sockets_incomplete_messages = {}
 
-        self.listener = socket.socket()
+        self._listener = socket.socket()
 
     def bind_clients_listener(self, host, port):
         try:
-            self.listener.bind((host, port))
+            self._listener.bind((host, port))
         except socket.error:
             print("Unable to bind server with specified host and port!")
 
     def power_on(self):
-        self.listener.listen(ServerCore.MAXIMUM_NUM_OF_CLIENTS)
-        self.listener.setblocking(False)
-        self.inputs.append(self.listener)
+        self._listener.listen(ServerCore.MAXIMUM_NUM_OF_CLIENTS)
+        self._listener.setblocking(False)
+        self._inputs.append(self._listener)
 
-        print("Listening to client on: {}".format(self.listener.getsockname()))
+        print("Listening to client on: {}".format(self._listener.getsockname()))
 
-        while self.inputs:
+        while self._inputs:
             readable, writable, exceptional = select.select(
-                self.inputs, self.outputs, self.inputs)
+                self._inputs, self._outputs, self._inputs)
 
-            for sock in readable:
-                if sock is self.listener:
-                    client_socket, client_address = sock.accept()
-                    self.initialize_client(client_socket)
+            for connection in readable:
+                if connection is self._listener:
+                    client_socket, client_address = connection.accept()
+                    self._initialize_client(client_socket)
                 else:
-                    self.process_received_data(sock)
+                    self._process_received_data(connection)
 
-            for sock in writable:
-                self.send_data_through_socket(sock)
+            for connection in writable:
+                self._send_data_through_socket(connection)
 
-            for sock in exceptional:
-                self.drop_client(sock)
+            for connection in exceptional:
+                self._drop_client(connection)
 
-    def process_received_data(self, socket):
+    def _process_received_data(self, connection):
         try:
-            received_data = socket.recv(ServerCore.RECEIVING_NUM_OF_BYTES).decode()
+            received_data = connection.recv(ServerCore.RECEIVING_NUM_OF_BYTES).decode()
             if not received_data:
                 raise ConnectionAbortedError
         except ServerCore.EXCEPTIONS_TO_BE_CAUGHT_DURING_RECEIVING:
-            self.drop_client(socket)
+            self._drop_client(connection)
         else:
-            received_data = self.sockets_incomplete_messages[socket] + received_data
+            received_data = self._sockets_incomplete_messages[connection] + received_data
 
             # clear the incomplete message after prepending its data to the received data
-            self.sockets_incomplete_messages[socket] = ""
+            self._sockets_incomplete_messages[connection] = ""
 
             # messages will be array of splitted messages.
             messages = received_data.split(ServerCore.ADJACENT_MESSAGES_SEPARATOR)
@@ -105,60 +105,60 @@ class ServerCore:
             last_message = messages.pop()
 
             for message in messages:
-                self.process_message(socket, message.strip(ServerCore.MESSAGE_DELIMITER))
+                self.process_message(connection, message.strip(ServerCore.MESSAGE_DELIMITER))
 
             # if the last_message ends with a delimiter this means that it is a complete message
             # else not and some of its part will come in the next message.
             if last_message.endswith(ServerCore.MESSAGE_DELIMITER):
-                self.process_message(socket, last_message.strip(ServerCore.MESSAGE_DELIMITER))
+                self.process_message(connection, last_message.strip(ServerCore.MESSAGE_DELIMITER))
             else:
-                self.sockets_incomplete_messages[socket] = last_message
+                self._sockets_incomplete_messages[connection] = last_message
 
-    def process_message(self, socket, message):
+    def process_message(self, connection, message):
         raise NotImplementedError
 
-    def initialize_client(self, socket):
-        socket.setblocking(False)
+    def _initialize_client(self, connection):
+        connection.setblocking(False)
 
-        print("A client connected from {}".format(socket.getpeername()))
-        self.inputs.append(socket)
-        self.message_queues[socket] = queue.Queue()
-        self.sockets_incomplete_messages[socket] = ""
-        self.connections_information[socket] = {}
+        print("A client connected from {}".format(connection.getpeername()))
+        self._inputs.append(connection)
+        self._message_queues[connection] = queue.Queue()
+        self._sockets_incomplete_messages[connection] = ""
+        self.connections_information[connection] = {}
         ServerCore.client_id += 1
 
-    def send_data_through_socket(self, socket):
+    def _send_data_through_socket(self, connection):
         try:
-            next_msg = self.message_queues[socket].get_nowait()
+            next_msg = self._message_queues[connection].get_nowait()
         except queue.Empty:
-            self.outputs.remove(socket)
+            self._outputs.remove(connection)
         else:
             # During sending catch different exceptions like ConnectionReset.
             # If any exception occurs, drop that client.
             try:
-                socket.sendall(next_msg.encode())
+                connection.sendall(next_msg.encode())
             except ServerCore.EXCEPTIONS_TO_BE_CAUGHT_DURING_SENDING:
-                self.drop_client(socket)
+                self._drop_client(connection)
 
-    def append_message_to_sending_queue(self, recipient_socket, message):
+    def append_message_to_sending_queue(self, recipient_connection, message):
         message = ServerCore.MESSAGE_DELIMITER + message + ServerCore.MESSAGE_DELIMITER
-        self.message_queues[recipient_socket].put(message)
-        if recipient_socket not in self.outputs:
-            self.outputs.append(recipient_socket)
+        self._message_queues[recipient_connection].put(message)
+        if recipient_connection not in self._outputs:
+            self._outputs.append(recipient_connection)
 
-    def send_immediate(self, recipient_socket, message):
-        self.append_message_to_sending_queue(recipient_socket, message)
-        self.send_data_through_socket(recipient_socket)
+    def send_immediate(self, recipient_connection, message):
+        self.append_message_to_sending_queue(recipient_connection, message)
+        self._send_data_through_socket(recipient_connection)
 
-    def drop_client(self, socket):
-        self.remove_resources(socket)
-        socket.close()
+    def _drop_client(self, connection):
+        self._remove_resources(connection)
+        connection.close()
 
-    def remove_resources(self, socket):
-        print("Removing: {}".format(socket.getpeername()))
-        if socket in self.outputs:
-            self.outputs.remove(socket)
-        self.inputs.remove(socket)
-        del self.connections_information[socket]
-        del self.message_queues[socket]
-        del self.sockets_incomplete_messages[socket]
+    def _remove_resources(self, connection):
+        print("Removing: {}".format(connection.getpeername()))
+        if connection in self._outputs:
+            self._outputs.remove(connection)
+        self._inputs.remove(connection)
+        del self.connections_information[connection]
+        del self._message_queues[connection]
+        del self._sockets_incomplete_messages[connection]

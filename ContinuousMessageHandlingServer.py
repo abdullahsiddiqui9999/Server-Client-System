@@ -5,17 +5,17 @@ class ContinuousMessageHandlingServer( ServerCore ):
         ServerCore.__init__(self, max_num_clients, receiving_buffer_size, message_delimiter)
 
 
-    def process_received_data(self, socket):
+    def _process_received_data(self, connection):
         try:
-            data = socket.recv(self.receiving_chunk_size).decode()
+            data = connection.recv(self.receiving_chunk_size).decode()
         except ConnectionResetError:
-            self.drop_client(socket)
+            self._drop_client(connection)
             return
         except OSError:
-            self.drop_client(socket)
+            self._drop_client(connection)
             return
 
         if data:
-            self.process_message(socket, data)
+            self.process_message(connection, data)
         else:
-            self.drop_client(socket)
+            self._drop_client(connection)

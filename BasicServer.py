@@ -41,19 +41,19 @@ class BasicServer( DiscreteMessageHandlingServer ):
         broadcasting_message = \
             "{}new_client_alert\nName:{}\ngateway:{}{}".format(self.message_delimiter,
                                                                self.connections_information[ socket]["username"],
-                                                               self.listener.getsockname()[0],
+                                                               self._listener.getsockname()[0],
                                                                self.message_delimiter)
-        self.message_queues[ self.hub ].put(broadcasting_message)
-        if self.hub not in self.outputs:
-            self.outputs.append( self.hub )
+        self._message_queues[ self.hub].put(broadcasting_message)
+        if self.hub not in self._outputs:
+            self._outputs.append(self.hub)
     # ------------------------------------
 
-    def drop_client(self, socket):
-        print( "Dropping {}!".format(self.connections_information[ socket]['username']))
+    def _drop_client(self, connection):
+        print( "Dropping {}!".format(self.connections_information[ connection]['username']))
         #-------------------------------------------------------------------------
         #Remove extra resources if allocated here!
         #------------------------------------------------------------------------
-        DiscreteMessageHandlingServer.drop_client(self, socket)
+        DiscreteMessageHandlingServer._drop_client(self, connection)
     # ------------------------------------
 
     def authenticate(self, socket, request_message):
@@ -72,12 +72,12 @@ class BasicServer( DiscreteMessageHandlingServer ):
 
     def connectToHub(self, host, port):
         self.hub.connect((host, port))
-        self.initialize_client(self.hub)
+        self._initialize_client(self.hub)
     # ------------------------------------
 
     def getClientGateway(self, client_name):
         if self.findSocket( client_name ) != False:
-            return self.listener.getsockname()[0]
+            return self._listener.getsockname()[0]
         elif client_name in self.clients_ledger:
             return self.clients_ledger[ client_name ][ 'gateway' ]
 

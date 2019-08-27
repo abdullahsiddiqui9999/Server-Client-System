@@ -13,7 +13,6 @@ with open("DSC_0124.JPG", "rb") as image_file:
     for i in range(0, 50):
         print("Sending...")
         s.send('$a$'.encode())
-        input()
 s.close()
 
 

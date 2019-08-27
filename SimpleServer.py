@@ -1,12 +1,11 @@
-from DiscreteMessageHandlingServer import DiscreteMessageHandlingServer
-import base64
+from ServerCore import ServerCore
 
 
-class SimpleServer(DiscreteMessageHandlingServer):
+class SimpleServer(ServerCore):
     def __init__(self):
-        DiscreteMessageHandlingServer.__init__(self)
+        ServerCore.__init__(self)
 
-    def process_discrete_message(self, socket, message):
+    def process_message(self, connection, message):
         print(message)
 
 

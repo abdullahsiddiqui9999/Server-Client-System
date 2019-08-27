@@ -5,17 +5,17 @@ class Hub ( DiscreteMessageHandlingServer ):
         DiscreteMessageHandlingServer.__init__(self, max_num_clients, receiving_buffer_size, message_delimiter)
         self.clients_ledger = {}
 
-    def drop_client(self, socket):
-        gateway_of_dropping_server = socket.getsocketname()[0]
+    def _drop_client(self, connection):
+        gateway_of_dropping_server = connection.getsocketname()[0]
         for client_name, gateway in self.clients_ledger.items():
             if gateway == gateway_of_dropping_server:
                 del self.clients_ledger[ client_name ]
 
-        DiscreteMessageHandlingServer.drop_client(self, socket)
+        DiscreteMessageHandlingServer._drop_client(self, connection)
 
     def broadcastClient(self, sender_socket , client_name, gateway ):
         broadcasting_message = "{}new_client_alert\nName:{}\nServer gateway:{}{}".format( self.message_delimiter, client_name, gateway, self.message_delimiter )
-        for socket in self.inputs:
+        for socket in self._inputs:
             if sender_socket != socket:
                 self.append_message_to_sending_queue(socket, broadcasting_message)
 

@@ -6,17 +6,17 @@ class MessageExchange( DiscreteMessageHandlingServer ):
         DiscreteMessageHandlingServer.__init__(self, max_num_clients, receiving_buffer_size, message_delimiter)
         self.messaging_server_pointer = messaging_server_pointer
 
-    def drop_client(self, socket):
+    def _drop_client(self, connection):
         #-------------------------------------------------------------------------
         #Remove extra resources if allocated here!
         #------------------------------------------------------------------------
 
-        DiscreteMessageHandlingServer.drop_client(self, socket)
+        DiscreteMessageHandlingServer._drop_client(self, connection)
 
     def process_discrete_message(self, socket, message):
         try:
             temp_socket = sc.socket()
-            temp_socket.connect( ( self.listener.getsockname()[0], 6000 ) )
+            temp_socket.connect((self._listener.getsockname()[0], 6000))
             temp_socket.sendall( "{}{}{}".format( self.message_delimiter, message, self.message_delimiter ).encode() )
             temp_socket.close()
         except sc.error:

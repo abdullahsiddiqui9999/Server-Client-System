@@ -8,25 +8,25 @@ class VideoServer( ContinuousMessageHandlingServer ):
     def setCallExchange(self, call_exchange_pointer):
         self.call_exchange_pointer = call_exchange_pointer
 
-    def drop_client(self, socket):
+    def _drop_client(self, connection):
         #-------------------------------------------------------------------------
         #Remove extra resources if allocated here!
         #-------------------------------------------------------------------------
-        self.connections_information[ socket]['partner_socket'].close()
+        self.connections_information[ connection]['partner_socket'].close()
         try:
             print( 'Executing set is busy!' )
-            self.call_exchange_pointer.setIsBusy(self.connections_information[ socket]['client_exchange_socket'], False)
+            self.call_exchange_pointer.setIsBusy(self.connections_information[ connection]['client_exchange_socket'], False)
         except KeyError:
             pass
 
-        ContinuousMessageHandlingServer.drop_client(self, socket)
+        ContinuousMessageHandlingServer._drop_client(self, connection)
 
     def importClient(self, client_socket, partner_socket, client_exchange_socket):
         print( "Importing!" )
         dummy_socket = socket.socket()
         # client_socket.sendall( "Hi".encode() )
-        self.initialize_client(client_socket)
-        self.initialize_client(partner_socket)
+        self._initialize_client(client_socket)
+        self._initialize_client(partner_socket)
         self.connections_information[ client_socket] = {
             'partner_socket': partner_socket,
             'client_exchange_socket': client_exchange_socket
@@ -35,7 +35,7 @@ class VideoServer( ContinuousMessageHandlingServer ):
             'partner_socket': client_socket
         }
         print( "Dummy socket connecting!" )
-        dummy_socket.connect( self.listener.getsockname() )
+        dummy_socket.connect(self._listener.getsockname())
 
-    def process_message(self, socket, message):
-        self.append_message_to_sending_queue(self.connections_information[ socket]['partner_socket'], message)
+    def process_message(self, connection, message):
+        self.append_message_to_sending_queue(self.connections_information[ connection]['partner_socket'], message)
