@@ -6,6 +6,7 @@ s.connect(('127.0.0.1', 27015))
 s.setblocking(True)
 
 for i in range(0, 50):
+    input()
     s.send('$a$'.encode())
 
 s.close()
