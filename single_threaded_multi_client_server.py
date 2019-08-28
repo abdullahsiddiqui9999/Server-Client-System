@@ -76,6 +76,11 @@ class SingleThreadedMultiClientServer:
         # bind listener
         self._listener.bind((self.host, self.port))
 
+        # currently, readable, writable, and exceptional connections.
+        self.__currently_readable_connections = []
+        self.__currently_writable_connections = []
+        self.__currently_exceptional_connections = []
+
     def power_on(self):
         self._listener.listen(SingleThreadedMultiClientServer.MAXIMUM_NUM_OF_CLIENTS)
         self._listener.setblocking(False)
@@ -87,17 +92,17 @@ class SingleThreadedMultiClientServer:
         print("Listening to client on: {}".format(self._listener.getsockname()))
 
         while self._inputs:
-            readable, writable, exceptional = select.select(
+            self.__currently_readable_connections, self.__currently_writable_connections, self.__currently_exceptional_connections = select.select(
                 self._inputs, self._outputs, self._inputs)
 
             # Acquire mutex
             self._thread_sensitive_data_in_use_mutex.acquire()
 
-            for connection in readable:
+            for connection in self.__currently_readable_connections:
                 if connection is self._listener:
                     client_socket, client_address = connection.accept()
 
-                    # Check if it the first client connected, because it will be of loop back connection.
+                    # Check if is it the first client connected, because it will be of loop back connection.
                     if SingleThreadedMultiClientServer.client_id == 0:
                         self._initialize_loop_back_connection_reading_end(client_socket)
                     else:
@@ -108,10 +113,10 @@ class SingleThreadedMultiClientServer:
                 else:
                     self._process_received_data(connection)
 
-            for connection in writable:
+            for connection in self.__currently_writable_connections:
                 self._send_data_through_socket(connection)
 
-            for connection in exceptional:
+            for connection in self.__currently_exceptional_connections:
                 self.drop_client(connection)
 
             # Release mutex
@@ -120,16 +125,20 @@ class SingleThreadedMultiClientServer:
     def process_message(self, connection, message):
         raise NotImplementedError
 
-    def append_message_to_sending_queue(self, recipient_connection, message):
+    def append_message_to_sending_queue(self, recipient_connection, message, is_called_from_main_thread=True):
         message = SingleThreadedMultiClientServer.MESSAGE_DELIMITER + message + SingleThreadedMultiClientServer.MESSAGE_DELIMITER
 
         # Python queues are already thread safe.
         self._message_queues[recipient_connection].put(message)
 
-        self._thread_sensitive_data_in_use_mutex.acquire()
+        if not is_called_from_main_thread:
+            self._thread_sensitive_data_in_use_mutex.acquire()
+
         if recipient_connection not in self._outputs:
             self._outputs.append(recipient_connection)
-        self._thread_sensitive_data_in_use_mutex.release()
+
+        if not is_called_from_main_thread:
+            self._thread_sensitive_data_in_use_mutex.release()
 
     def initialize_client(self, connection, connection_information={}):
         self._initialize_client_mutex.acquire()
@@ -226,13 +235,21 @@ class SingleThreadedMultiClientServer:
         self.__loop_back_connection.send(' '.encode())
 
     def _remove_resources(self, connection):
-        print("Removing: {}".format(connection.getpeername()))
+        print("Removing: {}".format(connection))
         if connection in self._outputs:
             self._outputs.remove(connection)
         self._inputs.remove(connection)
         del self.connections_information[connection]
         del self._message_queues[connection]
         del self._sockets_incomplete_messages[connection]
+
+        # Remove connection from currently readable, writable, and exceptional sockets
+        if connection in self.__currently_readable_connections:
+            self.__currently_readable_connections.remove(connection)
+        if connection in self.__currently_writable_connections:
+            self.__currently_writable_connections.remove(connection)
+        if connection in self.__currently_exceptional_connections:
+            self.__currently_exceptional_connections.remove(connection)
 
 
 class AsyncHandshakeModule(threading.Thread):

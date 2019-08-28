@@ -8,5 +8,8 @@ class Station(SingleThreadedMultiClientServer):
     def process_message(self, connection, message):
         print(message)
 
+        # SAY HI!
+        self.append_message_to_sending_queue(connection, 'Hi!')
+
     def perform_handshake_return_client_information(self, client_connection):
         return {}
