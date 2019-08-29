@@ -13,6 +13,7 @@ class Station(SingleThreadedMultiClientServer):
 
     def perform_handshake_return_client_information(self, client_connection):
         data = client_connection.recv(SingleThreadedMultiClientServer.RECEIVING_NUM_OF_BYTES).decode()
+        print(data)
         return {
             'name': data.split(':')[1]
         }
