@@ -9,7 +9,10 @@ class Station(SingleThreadedMultiClientServer):
         print(message)
 
         # SAY HI!
-        self.append_message_to_sending_queue(connection, 'Hi!')
+        self.append_message_to_sending_queue(connection, 'lighton')
 
     def perform_handshake_return_client_information(self, client_connection):
-        return {}
+        data = client_connection.recv(SingleThreadedMultiClientServer.RECEIVING_NUM_OF_BYTES).decode()
+        return {
+            'name': data.split(':')[1]
+        }
