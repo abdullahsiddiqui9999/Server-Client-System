@@ -3,12 +3,13 @@ import socket
 import queue
 import threading
 
+
 class SingleThreadedMultiClientServer:
     client_id = 0
 
     MESSAGE_DELIMITER = '$'
     MAXIMUM_NUM_OF_CLIENTS = 10
-    RECEIVING_NUM_OF_BYTES = 1024 * 10
+    RECEIVING_NUM_OF_BYTES = 512
     LOOP_BACK_RECEIVING_NUM_OF_BYTES = 1
 
     ADJACENT_MESSAGES_SEPARATOR = MESSAGE_DELIMITER + MESSAGE_DELIMITER
